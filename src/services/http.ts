@@ -47,8 +47,7 @@ function needsAppSession(url: string) {
   return (
     typeof url === "string" &&
     url.startsWith("/api/") &&
-    url !== "/api/session" &&
-    !isCrossOriginApiBase()
+    url !== "/api/session"
   );
 }
 
@@ -56,7 +55,7 @@ async function getCsrfToken() {
   if (csrfToken) return csrfToken;
   if (!csrfTokenRequest) {
     csrfTokenRequest = fetch(buildApiUrl("/api/session"), {
-      credentials: "same-origin",
+      credentials: isCrossOriginApiBase() ? "include" : "same-origin",
       headers: {
         "X-Requested-With": "XMLHttpRequest",
       },
@@ -110,7 +109,9 @@ export async function requestJson<T>(
     let response = await fetch(fullUrl, {
       ...fetchOptions,
       credentials: useAppSession
-        ? "same-origin"
+        ? isCrossOrigin
+          ? "include"
+          : "same-origin"
         : isCrossOrigin
           ? "omit"
           : fetchOptions.credentials,
@@ -127,7 +128,7 @@ export async function requestJson<T>(
       const refreshedToken = await getCsrfToken();
       response = await fetch(fullUrl, {
         ...fetchOptions,
-        credentials: "same-origin",
+        credentials: isCrossOrigin ? "include" : "same-origin",
         signal: controller.signal,
         headers: {
           ...(fetchOptions.body ? { "Content-Type": "application/json" } : {}),
