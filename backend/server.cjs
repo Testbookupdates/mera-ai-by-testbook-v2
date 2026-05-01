@@ -1354,12 +1354,16 @@ app.get('/api/analysis/:userid', async (req, res) => {
     try {
       adminToken = await adminLogin();
     } catch (e) {
+      console.error(`[API] LMS admin login failed for ${maskValue(userid)}: ${e.message}`);
       throw new Error("LIVE_FETCH_FAILED");
     }
 
     // Step 2: Search user by phone
     const tbUser = await searchUserByPhone(adminToken, userid);
-    if (!tbUser) throw new Error("LIVE_FETCH_FAILED");
+    if (!tbUser) {
+      console.error(`[API] LMS user lookup returned no student for ${maskValue(userid)}.`);
+      throw new Error("LIVE_FETCH_FAILED");
+    }
 
     const studentId = tbUser._id;
     console.log('[API] Successfully found student record.');
@@ -1374,7 +1378,10 @@ app.get('/api/analysis/:userid', async (req, res) => {
 
     // Step 5: Get All Tests (API 2)
     const allTests = await getLastTests(studentToken);
-    if (!allTests || allTests.length === 0) throw new Error("LIVE_FETCH_FAILED");
+    if (!allTests || allTests.length === 0) {
+      console.error(`[API] LMS returned no attempted tests for ${maskValue(userid)}.`);
+      throw new Error("LIVE_FETCH_FAILED");
+    }
 
     const lastTest = allTests[0];
     const testId = lastTest.details.id;
