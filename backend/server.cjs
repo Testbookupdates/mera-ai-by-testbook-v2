@@ -1,12 +1,28 @@
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const { Readable } = require('stream');
 const { pathToFileURL } = require('url');
+
+function readEnv(name, fallback = '') {
+  const value = process.env[name];
+  if (value == null || value === '') return fallback;
+
+  const trimmed = String(value).trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed;
+}
 
 // Ensure logs directory exists
 const logsDir = process.env.VERCEL ? path.join('/tmp', 'logs') : path.join(__dirname, 'logs');
@@ -20,9 +36,9 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 const SESSION_COOKIE_NAME = 'examdost_session';
-const SESSION_MAX_AGE_MS = Number(process.env.APP_SESSION_MAX_AGE_MS || 12 * 60 * 60 * 1000);
-const APP_SESSION_SECRET = process.env.APP_SESSION_SECRET || crypto.randomBytes(32).toString('hex');
-const CONFIGURED_ORIGINS = (process.env.FRONTEND_ORIGINS || '')
+const SESSION_MAX_AGE_MS = Number(readEnv('APP_SESSION_MAX_AGE_MS') || 12 * 60 * 60 * 1000);
+const APP_SESSION_SECRET = readEnv('APP_SESSION_SECRET') || crypto.randomBytes(32).toString('hex');
+const CONFIGURED_ORIGINS = readEnv('FRONTEND_ORIGINS')
   .split(',')
   .map(origin => origin.trim())
   .filter(Boolean);
@@ -226,18 +242,18 @@ function maskValue(value) {
 }
 
 const OPENAI_CHAT_API_URL = 'https://api.openai.com/v1/chat/completions';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const OPENAI_MODEL = readEnv('OPENAI_MODEL') || 'gpt-4o-mini';
 const GOOGLE_TTS_API_URL = 'https://texttospeech.googleapis.com/v1/text:synthesize';
 const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 let cachedGoogleTtsAccessToken = null;
 let cachedGoogleTtsAccessTokenExpiresAt = 0;
 
 function getOpenAiApiKey() {
-  return process.env.OPENAI_API_KEY;
+  return readEnv('OPENAI_API_KEY');
 }
 
 function getGoogleTtsApiKey() {
-  return process.env.GOOGLE_TTS_API_KEY || process.env.GOOGLE_API_KEY;
+  return readEnv('GOOGLE_TTS_API_KEY') || readEnv('GOOGLE_API_KEY');
 }
 
 function base64UrlJson(value) {
@@ -245,7 +261,7 @@ function base64UrlJson(value) {
 }
 
 function getGoogleTtsServiceAccount() {
-  const rawJson = process.env.GOOGLE_TTS_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+  const rawJson = readEnv('GOOGLE_TTS_SERVICE_ACCOUNT_JSON') || readEnv('GOOGLE_APPLICATION_CREDENTIALS_JSON');
   if (rawJson) {
     try {
       return JSON.parse(rawJson);
@@ -254,7 +270,7 @@ function getGoogleTtsServiceAccount() {
     }
   }
 
-  const credentialsPath = process.env.GOOGLE_TTS_CREDENTIALS_PATH || process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  const credentialsPath = readEnv('GOOGLE_TTS_CREDENTIALS_PATH') || readEnv('GOOGLE_APPLICATION_CREDENTIALS');
   if (credentialsPath && fs.existsSync(credentialsPath)) {
     return JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
   }
@@ -311,7 +327,7 @@ async function getGoogleTtsAccessTokenFromServiceAccount() {
 }
 
 async function getGoogleTtsRequestAuth() {
-  const explicitAccessToken = process.env.GOOGLE_TTS_ACCESS_TOKEN;
+  const explicitAccessToken = readEnv('GOOGLE_TTS_ACCESS_TOKEN');
   if (explicitAccessToken) {
     return {
       url: GOOGLE_TTS_API_URL,
@@ -362,7 +378,7 @@ function toOpenAiMessages(messages) {
 
 async function callOpenAIOnce({ apiKey, systemPrompt, messages, maxTokens }) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Number(process.env.OPENAI_TIMEOUT_MS || 60000));
+  const timeout = setTimeout(() => controller.abort(), Number(readEnv('OPENAI_TIMEOUT_MS') || 60000));
 
   let response;
   try {
@@ -380,8 +396,8 @@ async function callOpenAIOnce({ apiKey, systemPrompt, messages, maxTokens }) {
           ...messages
         ],
         max_tokens: maxTokens,
-        temperature: Number(process.env.OPENAI_TEMPERATURE || 0.35),
-        top_p: Number(process.env.OPENAI_TOP_P || 0.9)
+        temperature: Number(readEnv('OPENAI_TEMPERATURE') || 0.35),
+        top_p: Number(readEnv('OPENAI_TOP_P') || 0.9)
       })
     });
   } catch (error) {
@@ -453,7 +469,7 @@ async function callOpenAI({ systemPrompt, messages, maxTokens = 3600 }) {
       apiKey,
       systemPrompt,
       messages: continuationMessages,
-      maxTokens: Number(process.env.OPENAI_CONTINUATION_MAX_TOKENS || 1800)
+      maxTokens: Number(readEnv('OPENAI_CONTINUATION_MAX_TOKENS') || 1800)
     });
 
     text = `${text}\n\n${continuation.text}`.trim();
@@ -517,8 +533,8 @@ app.get('/api/health', (req, res) => {
     success: true,
     status: 'ok',
     service: 'meera-ai-backend',
-    hasLmsCredentials: Boolean(process.env.EMAIL && process.env.PASSWORD),
-    hasOpenAiKey: Boolean(process.env.OPENAI_API_KEY),
+    hasLmsCredentials: Boolean(readEnv('EMAIL') && readEnv('PASSWORD')),
+    hasOpenAiKey: Boolean(readEnv('OPENAI_API_KEY')),
     uptime: Math.round(process.uptime())
   });
 });
@@ -723,11 +739,11 @@ async function adminLogin() {
     return cachedAdminToken;
   }
 
-  const EMAIL = process.env.EMAIL;
-  const PASSWORD = process.env.PASSWORD;
+  const EMAIL = readEnv('EMAIL');
+  const PASSWORD = readEnv('PASSWORD');
   if (!EMAIL || !PASSWORD) throw new Error("Missing EMAIL or PASSWORD in .env");
 
-  const loginUrl = process.env.LOGIN_URL || "https://lms-api.testbook.com/api/v2/admin/login";
+  const loginUrl = readEnv('LOGIN_URL') || "https://lms-api.testbook.com/api/v2/admin/login";
   console.log(`[AUTH] Attempting login to ${loginUrl}`);
   const data = await fetchJsonWithRetry(loginUrl, {
     method: "POST",
@@ -748,7 +764,7 @@ async function adminLogin() {
 async function searchUserByPhone(adminToken, phone) {
   try {
     const filter = encodeURIComponent(JSON.stringify({ mobile: phone }));
-    const searchUrl = process.env.USER_SEARCH_URL || "https://lms-api.testbook.com/api/v2/admin/students";
+    const searchUrl = readEnv('USER_SEARCH_URL') || "https://lms-api.testbook.com/api/v2/admin/students";
     const url = `${searchUrl}?language=All&filter=${filter}`;
     const data = await fetchJsonWithRetry(url, { headers: { "Authorization": `Bearer ${adminToken}`, "x-tb-client": "lms,1.0" } });
     const students = data?.data?.students || [];
@@ -1194,7 +1210,7 @@ function buildCacheResponse(userid, userRow, analysisRows) {
 
 app.post('/api/events', async (req, res) => {
   try {
-    const webhookUrl = process.env.WEBHOOK_URL;
+    const webhookUrl = readEnv('WEBHOOK_URL');
 
     const event = {
       eventId: cleanText(req.body?.eventId, 100),
@@ -1654,7 +1670,7 @@ Format EXACTLY: "Fixing [Topic1] & [Topic2] can boost your score by +[N] marks."
 
 // ── DEBUG ENDPOINT: see raw sections from student-test-result API ──────────
 app.get('/api/debug/:userid', async (req, res) => {
-  if (process.env.ENABLE_DEBUG_API !== 'true') {
+  if (readEnv('ENABLE_DEBUG_API') !== 'true') {
     return res.status(404).json({ success: false, error: 'Not found.' });
   }
 
@@ -2106,7 +2122,7 @@ Data missing → "Data load error. App reload karein."`;
     const { text: fullText, usage, stopReason } = await callOpenAI({
       systemPrompt,
       messages: formattedMessages,
-      maxTokens: Number(process.env.OPENAI_MAX_TOKENS || 3600)
+      maxTokens: Number(readEnv('OPENAI_MAX_TOKENS') || 3600)
     });
 
     const inTokens = usage.input_tokens || 0;
@@ -2200,7 +2216,7 @@ if (fs.existsSync(frontendClientPath) && fs.existsSync(frontendServerPath)) {
 }
 
 if (require.main === module) {
-  const PORT = process.env.PORT || 3001;
+  const PORT = readEnv('PORT') || 3001;
   app.listen(PORT, () => console.log(`Node.js SQL Backend running on http://localhost:${PORT}`));
 }
 
