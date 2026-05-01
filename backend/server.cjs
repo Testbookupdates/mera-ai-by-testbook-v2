@@ -167,10 +167,13 @@ function isSecureRequest(req) {
 
 function setSessionCookie(req, res, session) {
   const maxAgeSeconds = Math.floor(SESSION_MAX_AGE_MS / 1000);
-  const secure = isSecureRequest(req) ? '; Secure' : '';
+  const requestOrigin = getRequestOrigin(req);
+  const crossOriginRequest = requestOrigin && !isRequestHostOrigin(req, requestOrigin);
+  const sameSite = crossOriginRequest && isSecureRequest(req) ? 'None' : 'Lax';
+  const secure = (sameSite === 'None' || isSecureRequest(req)) ? '; Secure' : '';
   res.setHeader(
     'Set-Cookie',
-    `${SESSION_COOKIE_NAME}=${encodeURIComponent(createSessionCookieValue(session))}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; SameSite=Lax${secure}`
+    `${SESSION_COOKIE_NAME}=${encodeURIComponent(createSessionCookieValue(session))}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; SameSite=${sameSite}${secure}`
   );
 }
 
@@ -508,6 +511,17 @@ app.use((req, res, next) => {
 app.use(corsMiddleware);
 app.options(/.*/, corsMiddleware);
 app.use(express.json({ limit: '64kb' }));
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    status: 'ok',
+    service: 'meera-ai-backend',
+    hasLmsCredentials: Boolean(process.env.EMAIL && process.env.PASSWORD),
+    hasOpenAiKey: Boolean(process.env.OPENAI_API_KEY),
+    uptime: Math.round(process.uptime())
+  });
+});
 
 const generalApiLimiter = createRateLimiter({
   windowMs: 60 * 1000,
